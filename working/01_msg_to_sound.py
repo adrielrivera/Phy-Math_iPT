@@ -1,4 +1,4 @@
-# INITIALIZATION
+# getting things ready
 
 # import os
 
@@ -6,22 +6,39 @@
 # pip.main(["install","numpy"])
 import numpy as np
 import math
+import os
+import glob
 from scipy.io.wavfile import write
 import matplotlib.pyplot as plt
 
-# SETTINGS AND GLOBAL VARIABLES
+# grab the current folder path
+current_dir = os.path.dirname(os.path.abspath(__file__))
 
-# Custom message (containing letters and/or spaces ' ')
-msg = "  lebro james  ";  # 2 spaces before 1st word, 1 space between words, 2 spaces after 2nd word
+# make a folder for our output stuff
+output_dir = os.path.join(current_dir, "transmitter_output")
+os.makedirs(output_dir, exist_ok=True)
 
-# Morse elements to pulses
-interelement_space = '0';
-interletter_space = '000';
-interword_space = '0000000';
-dot = '1';
-dash = '111';
+# hey, put your message here! (spaces are cool too)
+msg = "  HELLO WORLD  "  # stick 2 spaces at start and end, 1 space between words
+# clean up the message so we can use it in filenames
+clean_msg = ''.join(c for c in msg.strip() if c.isalnum())
 
-# Letters (excluding space character ' ') and their morse codes.
+# setup where we're gonna save all our files
+OUTPUT_FILES = {
+    'morse_sound': os.path.join(output_dir, f'transmitter_morse_{clean_msg}.wav'),
+    'envelope': os.path.join(output_dir, 'transmitter_signal_envelope.png'),
+    'period': os.path.join(output_dir, 'transmitter_signal_period.png')
+}
+
+# stuff for making morse code patterns
+interelement_space = '0';  # gap between dots and dashes
+interletter_space = '000';  # gap between letters
+interword_space = '0000000';  # big gap between words
+dot = '1';  # short beep
+dash = '111';  # long beep
+
+# here's all the morse code translations
+# each letter gets its dots and dashes
 key = \
 [['A', '.-'], ['B', '-...'], ['C', '-.-.'], ['D', '-..'], ['E', '.'], \
  ['F', '..-.'], ['G', '--.'], ['H', '....'], ['I', '..'], ['J', '.---'], \
@@ -33,198 +50,226 @@ key = \
  ['5', '.....'], ['6', '-....'], ['7', '--...'], ['8', '---..'], ['9', '----.'], \
  ['.', '.-.-.-'], [',', '--..--'], ['?', '..--..'], [':', '---...'], ['-', '-....-']];
 
-# Pulse duration, in seconds
-pulse_duration = 0.1;
-pulse_rate = 1.0/pulse_duration;
+# how long each pulse should be
+pulse_duration = 0.1;  # seconds
+pulse_rate = 1.0/pulse_duration;  # pulses per second
 
-# Sound frequency, in Hz
-sound_freq = 2349;  # Assigned value from the table
-# Sound amplitude, in arbitrary units (value must be from 0 to 32767)
-sound_amplitude = 20000;  # Setting a reasonable amplitude value
+# sound settings
+sound_freq = 2349;  # the beep frequency in Hz (from the assignment)
+sound_amplitude = 20000;  # how loud the beep is (max 32767)
 
-# Sampling rate, in samples per second
-samp_rate = 44100;
+# audio quality settings
+samp_rate = 44100;  # samples per second (CD quality)
 
-# FUNCTION DEFINITIONS
+# all the functions we need
 
 def morse_to_pulses(morse, interelement_space, dot, dash):
-	# Converts a string containing only '.'s or '-' into a string of '0's and '1's
-	# morse should not contain any space characters ' '.
-	pulses = '';
-	j = 0;
-	j_max = len(morse) - 1;
-	while j <= j_max:
+    # turns dots and dashes into 1s and 0s
+    # don't put spaces in here!
+    pulses = '';
+    j = 0;
+    j_max = len(morse) - 1;
+    while j <= j_max:
 
-		if j != 0:
-			pulses = pulses + interelement_space;
+        if j != 0:
+            pulses = pulses + interelement_space;
 
-		if morse[j] == '.':
-			pulses = pulses + dot;
-		elif morse [j] == '-':
-			pulses = pulses + dash;
-		else:
-			print('Error: input of morse_to_pulses should only contain .s and -s.');
-			[0][1]; # Crashes the programme
-		j = j + 1;
+        if morse[j] == '.':
+            pulses = pulses + dot;
+        elif morse [j] == '-':
+            pulses = pulses + dash;
+        else:
+            print('whoops! only dots and dashes allowed here');
+            [0][1];  # crash the program
+        j = j + 1;
 
-	return pulses;
+    return pulses;
 
 def add_pulses_to_key(key, interelement_space, dot, dash):
-	# Appends the binary string representing the morse code of each letter
-	# to the end of each row of the key array
-	j = 0;
-	j_max = len(key) - 1;
-	while j <= j_max:
-		morse = key[j][1];
-		key[j].append(morse_to_pulses(morse, interelement_space, dot, dash));
-		j = j + 1;
+    # adds the binary pattern to each letter in our lookup table
+    j = 0;
+    j_max = len(key) - 1;
+    while j <= j_max:
+        morse = key[j][1];
+        key[j].append(morse_to_pulses(morse, interelement_space, dot, dash));
+        j = j + 1;
 
-	return key;
+    return key;
 
 def letter_to_pulses(letter, key):
-	# Converts a letter (excluding ' ') to a binary string of its morse code
-	ok_letters = [row[0] for row in key];
-	pulses = [row[2] for row in key];
-	j = ok_letters.index(letter);
-	return pulses[j];
+    # converts a single letter to its beep pattern
+    ok_letters = [row[0] for row in key];
+    pulses = [row[2] for row in key];
+    j = ok_letters.index(letter);
+    return pulses[j];
 
 def msg_to_pulses(msg, key, interletter_space, interword_space):
-	# Converts a message (containing letters and/or spaces ' ')
-	# to a binary string of its morse code (pulses)
-	pulses = '';
-	j = 0;
-	j_max = len(msg) - 1;
-	while j <= j_max:
+    # turns your whole message into a beep pattern
+    pulses = '';
+    j = 0;
+    j_max = len(msg) - 1;
+    while j <= j_max:
 
-		if msg[j] == ' ':
-			pulses = pulses + interword_space;
-		else:
-			if j != 0:
-				if msg[j-1] != ' ':
-					pulses = pulses + interletter_space;
-			
-			pulses = pulses + letter_to_pulses(msg[j], key);
+        if msg[j] == ' ':
+            pulses = pulses + interword_space;
+        else:
+            if j != 0:
+                if msg[j-1] != ' ':
+                    pulses = pulses + interletter_space;
+            
+            pulses = pulses + letter_to_pulses(msg[j], key);
 
-		j = j + 1;
-	
-	return pulses;
+        j = j + 1;
+    
+    return pulses;
 
 def pulse_index_to_start_t(j, pulse_duration):
-	t = j * pulse_duration;
-	return t;
+    # figures out when a pulse should start
+    t = j * pulse_duration;
+    return t;
 
 def t_to_samp_index(t, samp_rate):
-	# Convert time t (in seconds) to sample index n
-	n = int(round(t * samp_rate));
-	return n;
+    # converts time to sample number
+    n = int(round(t * samp_rate));
+    return n;
 
 def samp_ts(start_t, end_t, samp_rate):
-	# Generate an array of time instants for all samples between start_t and end_t
-	# Calculate the sample indices corresponding to start and end times
-	start_n = t_to_samp_index(start_t, samp_rate);
-	end_n = t_to_samp_index(end_t, samp_rate);
-	
-	# Create array of sample indices from start_n to end_n (inclusive)
-	ns = np.arange(start_n, end_n + 1);
-	
-	# Convert sample indices to time values
-	ts = ns / samp_rate;
-	
-	return ts;
+    # makes a list of times for all our samples
+    start_n = t_to_samp_index(start_t, samp_rate);
+    end_n = t_to_samp_index(end_t, samp_rate);
+    
+    # make a list from start to end
+    ns = np.arange(start_n, end_n + 1);
+    
+    # convert to actual times
+    ts = ns / samp_rate;
+    
+    return ts;
 
 def tone(sound_freq, sound_amplitude, start_t, end_t, samp_rate):
-    # Consider a sound of a given frequency, amplitude, start and end times.
-    # The sound is sampled at samp_rate.
-    # This function returns an array of sound samples.
-	
-    # Get array of time instants for all samples
+    # makes a beep sound between start and end time
+    
+    # get all the sample times
     ts = samp_ts(start_t, end_t, samp_rate);
     
-    # Angular frequency, in radians per second
+    # math stuff for making waves
     omega = 2 * math.pi * sound_freq;
     
-    # Sinusoidal wave of a single tone
+    # make the actual wave
     samps = sound_amplitude * np.sin(omega * ts);
     
     return samps;
 
 def pulses_to_samps(pulses, pulse_duration, sound_freq, sound_amplitude, samp_rate):
-    # Converts a binary string (pulses) to an int16 array of the sound samples.
+    # turns our beep pattern into actual sound data
     
-    # Initialize an empty array to store all samples
+    # start with empty sound
     samps = np.array([]);
     
-    # Process each pulse in the binary string
+    # go through each pulse
     for j in range(len(pulses)):
-        # Calculate start and end times for this pulse
+        # when should this bit start and end?
         start_t = pulse_index_to_start_t(j, pulse_duration);
         end_t = pulse_index_to_start_t(j+1, pulse_duration);
         
-        # Generate tone samples for this pulse
+        # make the sound for this bit
         if pulses[j] == '1':
-            # For a '1' pulse, generate a tone
+            # make a beep for 1s
             pulse_samps = tone(sound_freq, sound_amplitude, start_t, end_t, samp_rate);
         else:
-            # For a '0' pulse, generate silence (amplitude = 0)
+            # make silence for 0s
             pulse_samps = tone(sound_freq, 0, start_t, end_t, samp_rate);
         
-        # Append these samples to the overall samples array
+        # add it to our sound
         samps = np.append(samps, pulse_samps);
     
-    # Rounds each element of samps to the nearest integer
-    # and converts it to the int16 data type.
+    # round everything to whole numbers
     samps = np.round(samps);
     
     return samps;
 
-# EXECUTION
+# let's do it!
 
-print(msg);
+print("Input message:", msg)
 
-# Pulses
-add_pulses_to_key(key, interelement_space, dot, dash);
-pulses = msg_to_pulses(msg, key, interletter_space, interword_space);
-print(pulses);
+# make the morse code
+add_pulses_to_key(key, interelement_space, dot, dash)
+pulses = msg_to_pulses(msg, key, interletter_space, interword_space)
+print("Morse code pattern:", pulses)
 
-# Sound samples
-samps = pulses_to_samps(pulses, pulse_duration, sound_freq, sound_amplitude, samp_rate);
+# make the sound
+samps = pulses_to_samps(pulses, pulse_duration, sound_freq, sound_amplitude, samp_rate)
 
-# Times, in seconds, of the signal values in samps
-ts = samp_ts(0, pulse_index_to_start_t(len(pulses), pulse_duration), samp_rate);
+# figure out the timing
+ts = np.linspace(0, len(samps)/samp_rate, len(samps))
 
-# Converts the array of samps into a .wav sound file.
-write('02_sound.wav', samp_rate, samps.astype(np.int16));
+# save the sound file
+write(OUTPUT_FILES['morse_sound'], samp_rate, samps.astype(np.int16))
 
-# GRAPH PLOTTING
+# make some cool graphs
 
-# The axes scales are set to see the envelope representing the pulses of the morse code.
-plt.clf();
-x_axis = ts;
-y_axis = samps;
-plt.plot(x_axis, y_axis);
-plt.ylim([-32768, 32767]);
-plt.xlabel('time / s');
-plt.ylabel('signal / arbitrary units');
-plt.savefig('03 Transmitted sound envelope.png');
+# first, show the whole signal
+plt.figure(1)
+plt.clf()
+x_axis = ts
+y_axis = samps
+plt.plot(x_axis, y_axis)
+plt.ylim([-32768, 32767])
+plt.xlabel('Time (seconds)')
+plt.ylabel('Signal Amplitude')
+plt.title(f'Transmitted Morse Code Signal Envelope\nMessage: "{msg.strip()}"')
+plt.grid(True)
+plt.savefig(OUTPUT_FILES['envelope'], dpi=300, bbox_inches='tight')
+plt.close(1)
 
-# Figure 2
-# The axes scales are set to see the periodicity of the sound signal 
-# of a '1'/on-pulse with respect to time.
-# Hover the cursor over a peak (e.g. maximum positive displacement) on the graph.
-# Record the x-coordinate (t / s) shown on the bottom-right of the window.
-# Repeat by hovering the cursor over the next peak (1 period later).
-# Calculate sound_period = the difference between the two values of t/s.
-# Calculate sound_freq = 1/sound_period.
-plt.figure();
-x_axis = ts;
-y_axis = samps;
-plt.plot(x_axis, y_axis);
-plt.xlabel('time / s');
-plt.ylabel('signal / arbitrary units');
-plt.xlim([1, 1.01]);
-plt.ylim([-32768, 32767]);
-plt.savefig('04 Transmitted sound period.png');
+# then zoom in to see the waves
+plt.figure(2)
+plt.clf()
+x_axis = ts
+y_axis = samps
+# find where the signal starts making noise
+non_zero_indices = np.where(np.abs(samps) > 1000)[0]
+if len(non_zero_indices) > 0:
+    start_idx = non_zero_indices[0]
+    start_time = ts[start_idx]
+    plt.plot(ts[ts >= start_time][0:441], samps[start_idx:start_idx+441])
+    plt.xlabel('Time (seconds)')
+    plt.ylabel('Signal Amplitude')
+    plt.title(f'Transmitted Signal Period Analysis\nFrequency: {sound_freq} Hz')
+    plt.grid(True)
+    plt.savefig(OUTPUT_FILES['period'], dpi=300, bbox_inches='tight')
+plt.close(2)
 
-plt.show()
+# save some info for the receiver
+message_info = {
+    'audio_file': os.path.basename(OUTPUT_FILES['morse_sound']),
+    'message': msg.strip(),
+    'duration': len(samps)/samp_rate,
+    'sample_rate': samp_rate,
+    'frequency': sound_freq,
+    'amplitude': sound_amplitude
+}
 
-print("Done!");
+# dump it to a file
+import json
+with open(os.path.join(output_dir, 'message_info.json'), 'w') as f:
+    json.dump(message_info, f, indent=4)
+
+print("\nTransmission complete! Files created:")
+print(f"1. {os.path.basename(OUTPUT_FILES['morse_sound'])}")
+print(f"   - Contains the Morse code audio for: {msg.strip()}")
+print(f"   - Duration: {len(samps)/samp_rate:.2f} seconds")
+print(f"   - Sample rate: {samp_rate} Hz")
+print(f"   - Frequency: {sound_freq} Hz")
+
+print(f"\n2. {os.path.basename(OUTPUT_FILES['envelope'])}")
+print("   - Shows the full signal envelope")
+
+print(f"\n3. {os.path.basename(OUTPUT_FILES['period'])}")
+print("   - Shows detailed signal waveform")
+print("   - Used to verify signal frequency")
+
+print("\n4. message_info.json")
+print("   - Contains message metadata for the receiver")
+
+print("\nReady for transmission!")

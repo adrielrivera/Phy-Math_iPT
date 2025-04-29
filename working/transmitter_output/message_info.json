@@ -1,0 +1,8 @@
+{
+    "audio_file": "transmitter_morse_HELLOWORLD.wav",
+    "message": "HELLO WORLD",
+    "duration": 13.903151927437642,
+    "sample_rate": 44100,
+    "frequency": 2349,
+    "amplitude": 20000
+}
